@@ -1,0 +1,1 @@
+-- Optional seed data file for local Supabase.
