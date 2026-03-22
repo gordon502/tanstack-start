@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
 import ReportsScreen from '@/modules/reports/pages/ReportsScreen'
 
-export const Route = createLazyFileRoute('/')({
+export const Route = createLazyFileRoute('/_authenticated/')({
   component: ReportsScreen,
 })

@@ -1,19 +1,53 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router'
 import { Zap } from 'lucide-react'
 import { Button } from '@/common/components/ui/button'
 import { Input } from '@/common/components/ui/input'
 import { Label } from '@/common/components/ui/label'
+import { signInWithEmailPassword } from '@/modules/auth/logic/auth-client'
+import { sanitizeAuthRedirect } from '@/modules/auth/utils/redirect'
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
+  const router = useRouter()
+  const search = useSearch({ from: '/login/' })
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    navigate({ to: '/' })
+
+    if (isSubmitting) {
+      return
+    }
+
+    setErrorMessage(null)
+    setIsSubmitting(true)
+
+    try {
+      const result = await signInWithEmailPassword({
+        email,
+        password,
+      })
+
+      if (!result.ok) {
+        setErrorMessage(result.message)
+        setIsSubmitting(false)
+        return
+      }
+
+      await router.invalidate()
+      await navigate({
+        to: sanitizeAuthRedirect(search.redirect),
+        replace: true,
+      })
+    } catch {
+      setErrorMessage('Unable to sign in right now. Please try again.')
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -41,17 +75,20 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
               <Label
-                htmlFor="username"
+                htmlFor="email"
                 className="text-xs font-medium tracking-wider text-muted-foreground uppercase"
               >
-                Username
+                Email
               </Label>
               <Input
-                id="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Enter username"
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@company.com"
                 className="h-11"
+                required
               />
             </div>
 
@@ -65,18 +102,27 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Enter password"
                 className="h-11"
+                required
               />
             </div>
 
+            {errorMessage ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
+
             <Button
               type="submit"
+              disabled={isSubmitting}
               className="h-11 w-full bg-accent text-sm font-semibold text-accent-foreground hover:bg-accent/90"
             >
-              Sign In
+              {isSubmitting ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
         </div>

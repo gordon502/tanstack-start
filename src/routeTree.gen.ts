@@ -9,65 +9,80 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as LoginIndexRouteImport } from './routes/login/index'
-import { Route as AiInstructionsIndexRouteImport } from './routes/ai-instructions/index'
+import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedAiInstructionsIndexRouteImport } from './routes/_authenticated/ai-instructions/index'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/index.lazy').then((d) => d.Route))
+} as any)
 const LoginIndexRoute = LoginIndexRouteImport.update({
   id: '/login/',
   path: '/login/',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/login/index.lazy').then((d) => d.Route))
-const AiInstructionsIndexRoute = AiInstructionsIndexRouteImport.update({
-  id: '/ai-instructions/',
-  path: '/ai-instructions/',
-  getParentRoute: () => rootRouteImport,
+const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedRoute,
 } as any).lazy(() =>
-  import('./routes/ai-instructions/index.lazy').then((d) => d.Route),
+  import('./routes/_authenticated/index.lazy').then((d) => d.Route),
 )
+const AuthenticatedAiInstructionsIndexRoute =
+  AuthenticatedAiInstructionsIndexRouteImport.update({
+    id: '/ai-instructions/',
+    path: '/ai-instructions/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any).lazy(() =>
+    import('./routes/_authenticated/ai-instructions/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/ai-instructions/': typeof AiInstructionsIndexRoute
+  '/': typeof AuthenticatedIndexRoute
   '/login/': typeof LoginIndexRoute
+  '/ai-instructions/': typeof AuthenticatedAiInstructionsIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/ai-instructions': typeof AiInstructionsIndexRoute
+  '/': typeof AuthenticatedIndexRoute
   '/login': typeof LoginIndexRoute
+  '/ai-instructions': typeof AuthenticatedAiInstructionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/ai-instructions/': typeof AiInstructionsIndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/_authenticated/': typeof AuthenticatedIndexRoute
   '/login/': typeof LoginIndexRoute
+  '/_authenticated/ai-instructions/': typeof AuthenticatedAiInstructionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ai-instructions/' | '/login/'
+  fullPaths: '/' | '/login/' | '/ai-instructions/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ai-instructions' | '/login'
-  id: '__root__' | '/' | '/ai-instructions/' | '/login/'
+  to: '/' | '/login' | '/ai-instructions'
+  id:
+    | '__root__'
+    | '/_authenticated'
+    | '/_authenticated/'
+    | '/login/'
+    | '/_authenticated/ai-instructions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AiInstructionsIndexRoute: typeof AiInstructionsIndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginIndexRoute: typeof LoginIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login/': {
@@ -77,19 +92,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ai-instructions/': {
-      id: '/ai-instructions/'
+    '/_authenticated/': {
+      id: '/_authenticated/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ai-instructions/': {
+      id: '/_authenticated/ai-instructions/'
       path: '/ai-instructions'
       fullPath: '/ai-instructions/'
-      preLoaderRoute: typeof AiInstructionsIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedAiInstructionsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAiInstructionsIndexRoute: typeof AuthenticatedAiInstructionsIndexRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAiInstructionsIndexRoute: AuthenticatedAiInstructionsIndexRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AiInstructionsIndexRoute: AiInstructionsIndexRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginIndexRoute: LoginIndexRoute,
 }
 export const routeTree = rootRouteImport

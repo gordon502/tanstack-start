@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useRouter } from '@tanstack/react-router'
 import { FileText, LogOut, Settings, Zap } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/common/utils/cn'
+import { signOutUser } from '@/modules/auth/logic/auth-client'
 
 const navItems = [
   { to: '/', label: 'Report Generator', icon: FileText },
@@ -14,9 +17,24 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate()
+  const router = useRouter()
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
-  const handleLogout = () => {
-    navigate({ to: '/login' })
+  const handleLogout = async () => {
+    if (isSigningOut) {
+      return
+    }
+
+    setIsSigningOut(true)
+
+    try {
+      await signOutUser()
+      await router.invalidate()
+      await navigate({ to: '/login', replace: true })
+    } catch {
+      toast.error('Unable to sign out. Please try again.')
+      setIsSigningOut(false)
+    }
   }
 
   return (
@@ -58,10 +76,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
           <button
             type="button"
             onClick={handleLogout}
+            disabled={isSigningOut}
             className="flex w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <LogOut className="h-4 w-4" />
-            Logout
+            {isSigningOut ? 'Logging out...' : 'Logout'}
           </button>
         </div>
       </aside>

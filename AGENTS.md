@@ -69,6 +69,10 @@ This document defines agent behavior for this repository (TanStack Start).
 
 - Always use Node.js 24 in this repository by running `nvm use 24` before working.
 - The database in this project is Supabase managed through the Supabase CLI.
+- The Supabase MCP server is available locally at `http://127.0.0.1:54321/mcp` (local environment only).
 - All Supabase and database changes must be made through the Supabase CLI so local-to-staging change management remains consistent and controlled.
 - For backend implementations, prefer built-in Supabase capabilities whenever possible (Auth, Storage, Queues, and other Supabase features).
 - If a requirement cannot be implemented with built-in Supabase capabilities, add custom code to the server-side project codebase.
+- Supabase security must be deny-by-default: enable RLS on all app data tables and keep read/write access blocked for unauthenticated (`anon`) users unless there is an explicitly approved exception.
+- Users may read Supabase data only through authentication and authorization policies (RLS/policies). Do not rely on frontend route guards as data-security enforcement.
+- Never expose or use `service_role` keys in browser/client code; client-side access must use publishable/anon keys only.
