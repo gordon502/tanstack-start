@@ -153,6 +153,7 @@ Set in `.env`:
 ```bash
 VITE_SUPABASE_URL="http://127.0.0.1:54321"
 VITE_SUPABASE_ANON_KEY="<YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY>"
+SUPABASE_SECRET_KEY="<YOUR_SUPABASE_SECRET_KEY_SERVER_ONLY>"
 ```
 
 6. On first run (or after migration changes), reset local database:
@@ -183,10 +184,10 @@ Required for app frontend/server runtime:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only; used to invoke `process-report-step`)
+- `SUPABASE_SECRET_KEY` (server-only; used to invoke `process-report-step`)
 
 If these variables are missing, the app fails at runtime.
-Never expose `SUPABASE_SERVICE_ROLE_KEY` in browser/client code.
+Never expose `SUPABASE_SECRET_KEY` in browser/client code.
 
 ## Developer commands
 
@@ -233,6 +234,8 @@ Deployment order:
 1. Supabase (`supabase db push`, `supabase functions deploy process-report-step`)
 2. Netlify (`npx netlify deploy --build --prod ...`)
 
+During Supabase deploy, workflow syncs `SUPABASE_SECRET_KEY` into Edge runtime as `REPORT_PROCESSOR_INVOKE_SECRET` (custom secret names cannot start with `SUPABASE_`).
+
 ### GitHub Environments and secrets
 
 Two GitHub Environments are required:
@@ -249,7 +252,7 @@ Each environment should contain:
 - `NETLIFY_SITE_ID`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY`
 
 Branch -> environment mapping:
 
@@ -271,7 +274,7 @@ Branch -> environment mapping:
   Check logs for `process-report-step` and inspect `report_jobs` table.
 
 - **`process-report-step` returns `401 Unauthorized`**  
-  Verify `SUPABASE_SERVICE_ROLE_KEY` is present in your server runtime and used as the `Authorization: Bearer <service_role_key>` header when invoking the function.
+  Verify `SUPABASE_SECRET_KEY` is present in your server runtime and used as the `Authorization: Bearer <sb_secret_...>` header when invoking the function.
 
 - **Supabase warns about leaked password protection**  
   Enable leaked password protection in Supabase Dashboard -> Auth -> Providers -> Email -> Password strength and leaked password protection.

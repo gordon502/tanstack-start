@@ -10,8 +10,8 @@ import {
 
 const REPORT_PROCESSOR_ENDPOINT = '/functions/v1/process-report-step'
 
-function getServiceRoleKey() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+function getSupabaseSecretKey() {
+  const key = process.env.SUPABASE_SECRET_KEY
 
   if (!key || key.trim().length === 0) {
     return null
@@ -24,16 +24,16 @@ async function invokeReportProcessor(
   reportId: string,
   supabase: ReturnType<typeof getSupabaseServerClient>,
 ) {
-  const serviceRoleKey = getServiceRoleKey()
+  const supabaseSecretKey = getSupabaseSecretKey()
 
-  if (serviceRoleKey) {
+  if (supabaseSecretKey) {
     const response = await fetch(
       `${env.supabaseUrl}${REPORT_PROCESSOR_ENDPOINT}`,
       {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${serviceRoleKey}`,
-          apikey: serviceRoleKey,
+          authorization: `Bearer ${supabaseSecretKey}`,
+          apikey: supabaseSecretKey,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
