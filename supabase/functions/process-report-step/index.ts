@@ -13,15 +13,19 @@ const MAX_JOBS_PER_INVOCATION = 4
 const MAX_WAIT_MS = 20_000
 const MAX_INVOCATION_MS = 75_000
 
-function isServiceRoleRequest(request: Request, serviceRoleKey: string) {
+function getBearerToken(request: Request) {
   const authorization = request.headers.get('authorization')
   const tokenMatch = authorization?.match(/^Bearer\s+(.+)$/i)
 
   if (!tokenMatch) {
-    return false
+    return null
   }
 
-  return tokenMatch[1].trim() === serviceRoleKey
+  return tokenMatch[1].trim()
+}
+
+function isServiceRoleToken(token: string, serviceRoleKey: string) {
+  return token === serviceRoleKey
 }
 
 function sleep(milliseconds: number) {
@@ -134,7 +138,8 @@ Deno.serve(async (request) => {
     )
   }
 
-  if (!isServiceRoleRequest(request, supabaseServiceRoleKey)) {
+  const bearerToken = getBearerToken(request)
+  if (!bearerToken) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -145,12 +150,60 @@ Deno.serve(async (request) => {
     },
   })
 
+  const isServiceRoleCaller = isServiceRoleToken(
+    bearerToken,
+    supabaseServiceRoleKey,
+  )
+
+  let callerUserId: string | null = null
+  if (!isServiceRoleCaller) {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAdmin.auth.getUser(bearerToken)
+
+    if (authError || !user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    callerUserId = user.id
+  }
+
   let reportId: string | null = null
   try {
     const body = (await request.json()) as { reportId?: string }
     reportId = body.reportId ?? null
   } catch {
     // Ignore empty body and process any due jobs.
+  }
+
+  if (!isServiceRoleCaller) {
+    if (!reportId) {
+      return Response.json(
+        { error: 'reportId is required for authenticated invocations' },
+        { status: 400 },
+      )
+    }
+
+    const { data: ownedReport, error: ownershipError } = await supabaseAdmin
+      .from('reports')
+      .select('id')
+      .eq('id', reportId)
+      .eq('user_id', callerUserId)
+      .maybeSingle()
+
+    if (ownershipError) {
+      return Response.json(
+        {
+          error: `Unable to verify report ownership: ${ownershipError.message}`,
+        },
+        { status: 500 },
+      )
+    }
+
+    if (!ownedReport) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
 
   const startedAt = Date.now()

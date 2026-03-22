@@ -14,38 +14,54 @@ function getServiceRoleKey() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!key || key.trim().length === 0) {
-    throw new Error(
-      'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY',
-    )
+    return null
   }
 
   return key
 }
 
-async function invokeReportProcessor(reportId: string) {
+async function invokeReportProcessor(
+  reportId: string,
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+) {
   const serviceRoleKey = getServiceRoleKey()
-  const response = await fetch(
-    `${env.supabaseUrl}${REPORT_PROCESSOR_ENDPOINT}`,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${serviceRoleKey}`,
-        apikey: serviceRoleKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        reportId,
-      }),
-    },
-  )
 
-  if (!response.ok) {
-    const responseText = await response.text()
-    throw new Error(
-      `Unable to invoke report processor (${response.status}): ${
-        responseText || 'empty response'
-      }`,
+  if (serviceRoleKey) {
+    const response = await fetch(
+      `${env.supabaseUrl}${REPORT_PROCESSOR_ENDPOINT}`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${serviceRoleKey}`,
+          apikey: serviceRoleKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          reportId,
+        }),
+      },
     )
+
+    if (!response.ok) {
+      const responseText = await response.text()
+      throw new Error(
+        `Unable to invoke report processor (${response.status}): ${
+          responseText || 'empty response'
+        }`,
+      )
+    }
+
+    return
+  }
+
+  const { error } = await supabase.functions.invoke('process-report-step', {
+    body: {
+      reportId,
+    },
+  })
+
+  if (error) {
+    throw new Error(`Unable to invoke report processor: ${error.message}`)
   }
 }
 
@@ -80,7 +96,7 @@ export const createReport = createServerFn({ method: 'POST' })
     }
 
     // Fire-and-forget trigger so create flow returns immediately.
-    void invokeReportProcessor(created.id).catch((invokeError) => {
+    void invokeReportProcessor(created.id, supabase).catch((invokeError) => {
       console.error('Unable to invoke report processor', invokeError)
     })
 
