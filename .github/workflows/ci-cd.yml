@@ -115,7 +115,6 @@ jobs:
           npx netlify env:set SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY" \
             --auth "$NETLIFY_AUTH_TOKEN" \
             --scope functions runtime \
-            --secret \
             --force
 
       - name: Deploy to Netlify
