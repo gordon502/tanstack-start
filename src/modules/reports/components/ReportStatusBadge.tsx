@@ -1,6 +1,5 @@
 import { Badge } from '@/common/components/ui/badge'
-
-type ReportStatus = 'New' | 'Processing' | 'Done' | 'FAILED'
+import type { ReportStatus } from '@/modules/reports/logic/report-schema'
 
 interface ReportStatusBadgeProps {
   status: ReportStatus

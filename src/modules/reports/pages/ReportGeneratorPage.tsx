@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowUpDown, Download, FileText, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/common/components/ui/button'
 import {
@@ -18,78 +18,75 @@ import {
 } from '@/common/components/ui/table'
 import { toast } from '@/common/components/ui/sonner'
 import ReportStatusBadge from '@/modules/reports/components/ReportStatusBadge'
-
-interface ReportError {
-  error_index: number
-  error_description: string
-  error: string
-  request_id: string
-}
-
-interface Report {
-  id: string
-  fileName: string
-  status: 'New' | 'Processing' | 'Done' | 'FAILED'
-  createdAt: string
-  errors?: ReportError[]
-}
-
-const initialReports: Report[] = [
-  {
-    id: '1',
-    fileName: 'Q1_Sales_Report.xlsx',
-    status: 'Done',
-    createdAt: '2026-03-15 09:30:00',
-  },
-  {
-    id: '2',
-    fileName: 'Inventory_March.csv',
-    status: 'Processing',
-    createdAt: '2026-03-16 14:20:00',
-  },
-  {
-    id: '3',
-    fileName: 'Customer_Data.xlsx',
-    status: 'FAILED',
-    createdAt: '2026-03-16 16:45:00',
-    errors: [
-      {
-        error_index: 1,
-        error_description: "Invalid column mapping for 'phone_number'",
-        error: 'COLUMN_MAPPING_ERROR',
-        request_id: 'req_abc123def456',
-      },
-      {
-        error_index: 2,
-        error_description: "Row 245: Missing required field 'carrier'",
-        error: 'VALIDATION_ERROR',
-        request_id: 'req_abc123def457',
-      },
-      {
-        error_index: 3,
-        error_description: 'API rate limit exceeded during processing',
-        error: 'RATE_LIMIT_ERROR',
-        request_id: 'req_abc123def458',
-      },
-    ],
-  },
-  {
-    id: '4',
-    fileName: 'Weekly_Summary.csv',
-    status: 'New',
-    createdAt: '2026-03-17 08:00:00',
-  },
-]
+import { createReport } from '@/modules/reports/api/create-report'
+import { deleteReport } from '@/modules/reports/api/delete-report'
+import { getReports } from '@/modules/reports/api/get-reports'
+import type { Report } from '@/modules/reports/logic/report-schema'
+import { REPORTS_STORAGE_BUCKET } from '@/modules/reports/logic/report-schema'
+import { getSupabaseBrowserClient } from '@/modules/auth/utils/supabase-browser'
 
 type SortKey = 'fileName' | 'status' | 'createdAt'
 
-export default function ReportGeneratorPage() {
-  const [reports, setReports] = useState<Report[]>(initialReports)
+interface ReportGeneratorPageProps {
+  initialData: Report[]
+}
+
+function buildStoragePath(userId: string, fileName: string) {
+  const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+  return `${userId}/${crypto.randomUUID()}-${safeFileName}`
+}
+
+export default function ReportGeneratorPage({
+  initialData,
+}: ReportGeneratorPageProps) {
+  const [reports, setReports] = useState<Report[]>(initialData)
   const [importOpen, setImportOpen] = useState(false)
   const [errorReport, setErrorReport] = useState<Report | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortAsc, setSortAsc] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
+  const [downloadingReportId, setDownloadingReportId] = useState<string | null>(
+    null,
+  )
+
+  const refreshReports = useCallback(async () => {
+    try {
+      const latest = await getReports()
+      setReports(latest)
+    } catch {
+      toast.error('Unable to refresh reports')
+    }
+  }, [])
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient()
+    const channel = supabase
+      .channel('reports-status-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reports' },
+        () => {
+          void refreshReports()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [refreshReports])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void refreshReports()
+    }, 5000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [refreshReports])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -111,27 +108,122 @@ export default function ReportGeneratorPage() {
     })
   }, [reports, sortKey, sortAsc])
 
-  const handleImport = () => {
-    if (!selectedFile) {
+  const handleImport = async () => {
+    if (!selectedFile || isImporting) {
       return
     }
 
-    const newReport: Report = {
-      id: Date.now().toString(),
-      fileName: selectedFile.name,
-      status: 'New',
-      createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
-    }
+    setIsImporting(true)
+    const supabase = getSupabaseBrowserClient()
+    const storageBucket = REPORTS_STORAGE_BUCKET
+    let storagePath: string | null = null
+    let shouldCleanupUploadedFile = false
 
-    setReports([newReport, ...reports])
-    setSelectedFile(null)
-    setImportOpen(false)
-    toast.success('Report scheduled')
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        throw new Error('You must be logged in to upload reports.')
+      }
+
+      storagePath = buildStoragePath(user.id, selectedFile.name)
+
+      const { error: uploadError } = await supabase.storage
+        .from(storageBucket)
+        .upload(storagePath, selectedFile, {
+          contentType: selectedFile.type || undefined,
+          upsert: false,
+        })
+
+      if (uploadError) {
+        throw new Error('Unable to upload file.')
+      }
+
+      shouldCleanupUploadedFile = true
+
+      const createdReport = await createReport({
+        data: {
+          fileName: selectedFile.name,
+          storageBucket,
+          storagePath,
+          mimeType: selectedFile.type || null,
+          fileSizeBytes: selectedFile.size,
+        },
+      })
+
+      shouldCleanupUploadedFile = false
+
+      setReports((currentReports) => [createdReport, ...currentReports])
+      setSelectedFile(null)
+      setImportOpen(false)
+      toast.success('Report scheduled')
+    } catch {
+      if (shouldCleanupUploadedFile && storagePath) {
+        const { error: cleanupError } = await supabase.storage
+          .from(storageBucket)
+          .remove([storagePath])
+
+        if (cleanupError) {
+          console.error('Unable to rollback uploaded report file', cleanupError)
+        }
+      }
+
+      toast.error('Unable to schedule report')
+    } finally {
+      setIsImporting(false)
+    }
   }
 
-  const handleDelete = (id: string) => {
-    setReports(reports.filter((report) => report.id !== id))
-    toast('Report deleted')
+  const handleDelete = async (id: string) => {
+    if (deletingReportId) {
+      return
+    }
+
+    const previousReports = reports
+    setDeletingReportId(id)
+    setReports((currentReports) =>
+      currentReports.filter((report) => report.id !== id),
+    )
+
+    try {
+      await deleteReport({
+        data: { id },
+      })
+      toast.success('Report deleted')
+    } catch {
+      setReports(previousReports)
+      toast.error('Unable to delete report')
+    } finally {
+      setDeletingReportId(null)
+    }
+  }
+
+  const handleDownload = async (report: Report) => {
+    if (downloadingReportId) {
+      return
+    }
+
+    setDownloadingReportId(report.id)
+    const supabase = getSupabaseBrowserClient()
+
+    try {
+      const { data, error } = await supabase.storage
+        .from(report.storageBucket)
+        .createSignedUrl(report.storagePath, 60)
+
+      if (error || !data.signedUrl) {
+        throw new Error('Unable to create download URL.')
+      }
+
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    } catch {
+      toast.error('Unable to download report')
+    } finally {
+      setDownloadingReportId(null)
+    }
   }
 
   return (
@@ -147,6 +239,7 @@ export default function ReportGeneratorPage() {
         </div>
         <Button
           onClick={() => setImportOpen(true)}
+          disabled={isImporting}
           className="h-10 bg-accent px-5 font-semibold text-accent-foreground hover:bg-accent/90"
         >
           <Upload className="mr-2 h-4 w-4" />
@@ -213,6 +306,8 @@ export default function ReportGeneratorPage() {
                   {report.status === 'Done' && (
                     <button
                       type="button"
+                      onClick={() => void handleDownload(report)}
+                      disabled={downloadingReportId === report.id}
                       className="text-muted-foreground transition-colors hover:text-accent"
                     >
                       <Download className="h-4 w-4" />
@@ -222,7 +317,8 @@ export default function ReportGeneratorPage() {
                 <TableCell>
                   <button
                     type="button"
-                    onClick={() => handleDelete(report.id)}
+                    onClick={() => void handleDelete(report.id)}
+                    disabled={deletingReportId === report.id}
                     className="text-muted-foreground opacity-0 transition-all duration-150 group-hover:opacity-100 hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -255,6 +351,7 @@ export default function ReportGeneratorPage() {
             <Input
               type="file"
               accept=".xlsx,.csv"
+              disabled={isImporting}
               onChange={(event) =>
                 setSelectedFile(event.target.files?.[0] ?? null)
               }
@@ -264,16 +361,17 @@ export default function ReportGeneratorPage() {
               <Button
                 variant="outline"
                 onClick={() => setImportOpen(false)}
+                disabled={isImporting}
                 className="h-10"
               >
                 Cancel
               </Button>
               <Button
-                onClick={handleImport}
-                disabled={!selectedFile}
+                onClick={() => void handleImport()}
+                disabled={!selectedFile || isImporting}
                 className="h-10 bg-accent font-semibold text-accent-foreground hover:bg-accent/90"
               >
-                Import
+                {isImporting ? 'Importing...' : 'Import'}
               </Button>
             </div>
           </div>
