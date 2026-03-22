@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { env } from '@/common/utils/env'
 import { getSupabaseServerClient } from '@/modules/auth/utils/supabase-server'
 import {
   createReportInputSchema,
@@ -6,6 +7,47 @@ import {
   REPORT_COLUMNS,
   reportRowSchema,
 } from '@/modules/reports/logic/report-schema'
+
+const REPORT_PROCESSOR_ENDPOINT = '/functions/v1/process-report-step'
+
+function getServiceRoleKey() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!key || key.trim().length === 0) {
+    throw new Error(
+      'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY',
+    )
+  }
+
+  return key
+}
+
+async function invokeReportProcessor(reportId: string) {
+  const serviceRoleKey = getServiceRoleKey()
+  const response = await fetch(
+    `${env.supabaseUrl}${REPORT_PROCESSOR_ENDPOINT}`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        reportId,
+      }),
+    },
+  )
+
+  if (!response.ok) {
+    const responseText = await response.text()
+    throw new Error(
+      `Unable to invoke report processor (${response.status}): ${
+        responseText || 'empty response'
+      }`,
+    )
+  }
+}
 
 export const createReport = createServerFn({ method: 'POST' })
   .inputValidator(createReportInputSchema)
@@ -38,15 +80,9 @@ export const createReport = createServerFn({ method: 'POST' })
     }
 
     // Fire-and-forget trigger so create flow returns immediately.
-    void supabase.functions
-      .invoke('process-report-step', {
-        body: {
-          reportId: created.id,
-        },
-      })
-      .catch((invokeError) => {
-        console.error('Unable to invoke report processor', invokeError)
-      })
+    void invokeReportProcessor(created.id).catch((invokeError) => {
+      console.error('Unable to invoke report processor', invokeError)
+    })
 
     return mapRowToReport(reportRowSchema.parse(created))
   })
