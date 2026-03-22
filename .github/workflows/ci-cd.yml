@@ -108,7 +108,6 @@ jobs:
       - name: Sync server env vars to Netlify
         run: |
           npx netlify env:set SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY" \
-            --site "$NETLIFY_SITE_ID" \
             --auth "$NETLIFY_AUTH_TOKEN" \
             --context production \
             --scope functions runtime \
