@@ -1,6 +1,0 @@
-.env
-
-volumes/db/data/*
-
-volumes/storage/*
-!volumes/storage/.gitkeep
