@@ -24,8 +24,8 @@ function getBearerToken(request: Request) {
   return tokenMatch[1].trim()
 }
 
-function isServiceRoleToken(token: string, serviceRoleKey: string) {
-  return token === serviceRoleKey
+function isSecretKeyToken(token: string, secretKey: string) {
+  return token === secretKey
 }
 
 function sleep(milliseconds: number) {
@@ -129,11 +129,14 @@ Deno.serve(async (request) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const supabaseSecretKey = Deno.env.get('SUPABASE_SECRET_KEY')
 
-  if (!supabaseUrl || !supabaseServiceRoleKey) {
+  if (!supabaseUrl || !supabaseSecretKey) {
     return Response.json(
-      { error: 'Missing Supabase environment variables' },
+      {
+        error:
+          'Missing Supabase environment variables (SUPABASE_URL, SUPABASE_SECRET_KEY)',
+      },
       { status: 500 },
     )
   }
@@ -143,20 +146,17 @@ Deno.serve(async (request) => {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  const supabaseAdmin = createClient(supabaseUrl, supabaseSecretKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
   })
 
-  const isServiceRoleCaller = isServiceRoleToken(
-    bearerToken,
-    supabaseServiceRoleKey,
-  )
+  const isSecretKeyCaller = isSecretKeyToken(bearerToken, supabaseSecretKey)
 
   let callerUserId: string | null = null
-  if (!isServiceRoleCaller) {
+  if (!isSecretKeyCaller) {
     const {
       data: { user },
       error: authError,
@@ -177,7 +177,7 @@ Deno.serve(async (request) => {
     // Ignore empty body and process any due jobs.
   }
 
-  if (!isServiceRoleCaller) {
+  if (!isSecretKeyCaller) {
     if (!reportId) {
       return Response.json(
         { error: 'reportId is required for authenticated invocations' },
