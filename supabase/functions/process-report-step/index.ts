@@ -13,6 +13,17 @@ const MAX_JOBS_PER_INVOCATION = 4
 const MAX_WAIT_MS = 20_000
 const MAX_INVOCATION_MS = 75_000
 
+function isServiceRoleRequest(request: Request, serviceRoleKey: string) {
+  const authorization = request.headers.get('authorization')
+  const tokenMatch = authorization?.match(/^Bearer\s+(.+)$/i)
+
+  if (!tokenMatch) {
+    return false
+  }
+
+  return tokenMatch[1].trim() === serviceRoleKey
+}
+
 function sleep(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
@@ -121,6 +132,10 @@ Deno.serve(async (request) => {
       { error: 'Missing Supabase environment variables' },
       { status: 500 },
     )
+  }
+
+  if (!isServiceRoleRequest(request, supabaseServiceRoleKey)) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {

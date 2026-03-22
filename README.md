@@ -183,8 +183,10 @@ Required for app frontend/server runtime:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only; used to invoke `process-report-step`)
 
 If these variables are missing, the app fails at runtime.
+Never expose `SUPABASE_SERVICE_ROLE_KEY` in browser/client code.
 
 ## Developer commands
 
@@ -266,6 +268,12 @@ Branch -> environment mapping:
 
 - **Report stays in `New`/`Processing`**  
   Check logs for `process-report-step` and inspect `report_jobs` table.
+
+- **`process-report-step` returns `401 Unauthorized`**  
+  Verify `SUPABASE_SERVICE_ROLE_KEY` is present in your server runtime and used as the `Authorization: Bearer <service_role_key>` header when invoking the function.
+
+- **Supabase warns about leaked password protection**  
+  Enable leaked password protection in Supabase Dashboard -> Auth -> Providers -> Email -> Password strength and leaked password protection.
 
 ## Notes
 
