@@ -82,7 +82,7 @@ jobs:
         run: supabase secrets set REPORT_PROCESSOR_INVOKE_SECRET="$SUPABASE_SECRET_KEY" --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy edge functions
-        run: supabase functions deploy process-report-step --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy process-report-step --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
   deploy-netlify:
     name: Deploy Netlify (${{ github.ref_name }})

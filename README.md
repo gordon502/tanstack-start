@@ -231,7 +231,7 @@ Deploy runs only for branches:
 
 Deployment order:
 
-1. Supabase (`supabase db push`, `supabase functions deploy process-report-step`)
+1. Supabase (`supabase db push`, `supabase functions deploy process-report-step --no-verify-jwt`)
 2. Netlify (`npx netlify deploy --build --prod ...`)
 
 During Supabase deploy, workflow syncs `SUPABASE_SECRET_KEY` into Edge runtime as `REPORT_PROCESSOR_INVOKE_SECRET` (custom secret names cannot start with `SUPABASE_`).
@@ -274,7 +274,7 @@ Branch -> environment mapping:
   Check logs for `process-report-step` and inspect `report_jobs` table.
 
 - **`process-report-step` returns `401 Unauthorized`**  
-  Verify `SUPABASE_SECRET_KEY` is present in your server runtime and used as the `Authorization: Bearer <sb_secret_...>` header when invoking the function.
+  Verify `SUPABASE_SECRET_KEY` is present in your server runtime and used as the `Authorization: Bearer <sb_secret_...>` header when invoking the function. Ensure function is deployed with `--no-verify-jwt`; otherwise gateway rejects `sb_secret_...` before the function runs.
 
 - **Supabase warns about leaked password protection**  
   Enable leaked password protection in Supabase Dashboard -> Auth -> Providers -> Email -> Password strength and leaked password protection.
