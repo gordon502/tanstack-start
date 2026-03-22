@@ -234,6 +234,8 @@ Deployment order:
 1. Supabase (`supabase db push`, `supabase functions deploy process-report-step`)
 2. Netlify (`npx netlify deploy --build --prod ...`)
 
+During Supabase deploy, workflow syncs `SUPABASE_SECRET_KEY` into Edge runtime as `REPORT_PROCESSOR_INVOKE_SECRET` (custom secret names cannot start with `SUPABASE_`).
+
 ### GitHub Environments and secrets
 
 Two GitHub Environments are required:
