@@ -17,8 +17,8 @@ interface EditableListProps {
   title: string
   icon: ReactNode
   items: string[]
-  onAdd: (item: string) => void
-  onDelete: (index: number) => void
+  onAdd: (item: string) => Promise<void> | void
+  onDelete: (index: number) => Promise<void> | void
 }
 
 export default function EditableList({
@@ -29,8 +29,13 @@ export default function EditableList({
   onDelete,
 }: EditableListProps) {
   const [newItem, setNewItem] = useState('')
+  const [isMutating, setIsMutating] = useState(false)
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
+    if (isMutating) {
+      return
+    }
+
     const trimmed = newItem.trim()
     if (!trimmed) {
       return
@@ -41,8 +46,32 @@ export default function EditableList({
       return
     }
 
-    onAdd(trimmed)
-    setNewItem('')
+    setIsMutating(true)
+
+    try {
+      await onAdd(trimmed)
+      setNewItem('')
+    } catch {
+      toast.error(`Unable to update ${title.toLowerCase()}`)
+    } finally {
+      setIsMutating(false)
+    }
+  }
+
+  const handleDelete = async (index: number) => {
+    if (isMutating) {
+      return
+    }
+
+    setIsMutating(true)
+
+    try {
+      await onDelete(index)
+    } catch {
+      toast.error(`Unable to update ${title.toLowerCase()}`)
+    } finally {
+      setIsMutating(false)
+    }
   }
 
   return (
@@ -69,13 +98,15 @@ export default function EditableList({
             placeholder={`Add new ${title.toLowerCase().replace(/s$/, '')}...`}
             value={newItem}
             onChange={(event) => setNewItem(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
+            onKeyDown={(event) => event.key === 'Enter' && void handleAdd()}
             className="h-9 flex-1 text-sm"
+            disabled={isMutating}
           />
           <Button
             size="sm"
-            onClick={handleAdd}
+            onClick={() => void handleAdd()}
             className="h-9 bg-accent px-3 text-accent-foreground hover:bg-accent/90"
+            disabled={isMutating}
           >
             <Plus className="h-4 w-4" />
           </Button>
@@ -99,7 +130,8 @@ export default function EditableList({
                   <TableCell className="py-2">
                     <button
                       type="button"
-                      onClick={() => onDelete(index)}
+                      onClick={() => void handleDelete(index)}
+                      disabled={isMutating}
                       className="text-muted-foreground opacity-0 transition-all duration-150 group-hover:opacity-100 hover:text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

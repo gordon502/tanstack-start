@@ -7,6 +7,7 @@ This document defines agent behavior for this repository (TanStack Start).
 - After every code change, the agent must run ESLint validation.
 - After every code change, the agent must format only edited files using `yarn prettier --write`.
 - After formatting, the agent must run ESLint again to confirm no regressions.
+- After linting, the agent must run `yarn check-types` and fix all TypeScript errors introduced by the changes.
 - After completing changes, the agent must rebuild the project using `yarn build`.
 - The agent should not format or modify files that were not touched.
 

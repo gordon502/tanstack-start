@@ -1,0 +1,19 @@
+---
+description: Keep Chrome and Supabase MCP connectivity healthy
+alwaysApply: true
+---
+
+# MCP Connectivity Playbook
+
+- Always switch runtime first: `nvm use 24`.
+- For Supabase-dependent tasks, check local stack with `npx supabase status`.
+- If Supabase is down, run `npx supabase start` (Docker Desktop must be running).
+- Treat `http://127.0.0.1:54321/mcp` responding with `405 Method Not Allowed` for `GET` as healthy (endpoint expects `POST`).
+- Use workspace MCP config from `.cursor/mcp.json`:
+  - `playwright` via `@playwright/mcp` with `--browser chrome`
+  - `supabase` via `http://127.0.0.1:54321/mcp`
+- For frontend verification, use Playwright in Chrome against `http://localhost:3000`.
+- If MCP tool calls fail, re-check:
+  - Docker/Supabase status
+  - `mcp.json` entries
+  - whether the dev server is running on port `3000`

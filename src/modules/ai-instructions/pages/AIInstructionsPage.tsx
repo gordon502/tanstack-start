@@ -3,135 +3,69 @@ import { Code2, Database, Monitor, Radio } from 'lucide-react'
 import { Button } from '@/common/components/ui/button'
 import { Textarea } from '@/common/components/ui/textarea'
 import { toast } from '@/common/components/ui/sonner'
+import { updateAIInstructions } from '@/modules/ai-instructions/api/update-ai-instructions'
 import EditableList from '@/modules/ai-instructions/components/EditableList'
-import { modelInfoData } from '@/modules/ai-instructions/utils/model-info'
+import type { AIInstructions } from '@/modules/ai-instructions/logic/ai-instructions-schema'
+import {
+  modelsJsonTextSchema,
+  parseModelsJsonText,
+} from '@/modules/ai-instructions/logic/ai-instructions-schema'
 
-const initialStorage = [
-  '2TB',
-  '1TB',
-  '512GB',
-  '256GB',
-  '128GB',
-  '64GB',
-  '32GB',
-  '16GB',
-  '8GB',
-  '4GB',
-  '2GB',
-  '1GB',
-  '512MB',
-  '256MB',
-]
+interface AIInstructionsPageProps {
+  initialData: AIInstructions
+}
 
-const initialScreenSizes = [
-  '38MM',
-  '40MM',
-  '41MM',
-  '42MM',
-  '43MM',
-  '44MM',
-  '45MM',
-  '46MM',
-  '47MM',
-  '49MM',
-]
+function getJsonValidationMessage(value: string) {
+  const validation = modelsJsonTextSchema.safeParse(value)
+  return validation.success
+    ? ''
+    : (validation.error.issues[0]?.message ?? 'Invalid JSON')
+}
 
-const initialCarriers = [
-  'Verizon',
-  'AT&T',
-  'Boost',
-  'MetroPCS',
-  'T-Mobile',
-  'Xfinity',
-  'US Cellular',
-  'Spectrum',
-  'Cricket',
-  'Altice',
-  'Argon',
-  'Bell',
-  'C Spire',
-  'Carolina West',
-  'Chile',
-  'Claro',
-  'Comcel',
-  'Docomo',
-  'EMEA',
-  'Fido',
-  'GCI',
-  'Globe Telecom',
-  'KDDI',
-  'Kt',
-  'kr',
-  'Kyivstar',
-  'Latin America Region',
-  'Mint Mobile',
-  'Movistar',
-  'Nextel',
-  'Orange',
-  'Panhandle',
-  'Redpocket',
-  'Rogers',
-  'Smart',
-  'Softbank',
-  'Straight Talk',
-  'Telcel',
-  'Telefonica',
-  'Telstra',
-  'Telus',
-  'Tigo',
-  'TIM',
-  'Tracfone',
-  'Ultra Mobile',
-  'Union Wireless',
-  'US Consumer Cellular',
-  'US Reseller Flex',
-  'USA Region',
-  'Viaero',
-  'Virgin',
-  'Vodafone',
-  'WIFI',
-  'Puerto Rico Liberty',
-  'Visible',
-  'Sprint',
-  'A1 Telekom',
-  'Open Mobile',
-  'Flow',
-  'Assurance Wireless',
-  'Cox',
-  'APAC',
-  'United Wireless',
-  'SK telecom',
-  'Central Wireless',
-  'Liberty Latin America',
-  'Three Ireland',
-]
-
-export default function AIInstructionsPage() {
-  const [storage, setStorage] = useState(initialStorage)
-  const [screenSizes, setScreenSizes] = useState(initialScreenSizes)
-  const [carriers, setCarriers] = useState(initialCarriers)
+export default function AIInstructionsPage({
+  initialData,
+}: AIInstructionsPageProps) {
+  const [storage, setStorage] = useState(initialData.storageOptions)
+  const [screenSizes, setScreenSizes] = useState(initialData.watchScreenSizes)
+  const [carriers, setCarriers] = useState(initialData.carriers)
   const [modelsJson, setModelsJson] = useState(
-    JSON.stringify(modelInfoData, null, 2),
+    JSON.stringify(initialData.allModels, null, 2),
   )
   const [jsonError, setJsonError] = useState('')
+  const [isSavingJson, setIsSavingJson] = useState(false)
 
   const handleJsonChange = (value: string) => {
     setModelsJson(value)
-    try {
-      JSON.parse(value)
-      setJsonError('')
-    } catch {
-      setJsonError('Invalid JSON')
-    }
+    setJsonError(getJsonValidationMessage(value))
   }
 
-  const handleSaveJson = () => {
+  const handleSaveJson = async () => {
+    if (isSavingJson) {
+      return
+    }
+
+    const validationMessage = getJsonValidationMessage(modelsJson)
+    if (validationMessage) {
+      setJsonError(validationMessage)
+      return
+    }
+
+    const parsedModels = parseModelsJsonText(modelsJson)
+    setIsSavingJson(true)
+
     try {
-      JSON.parse(modelsJson)
+      const updated = await updateAIInstructions({
+        data: {
+          allModels: parsedModels,
+        },
+      })
+      setModelsJson(JSON.stringify(updated.allModels, null, 2))
       setJsonError('')
       toast.success('Models JSON saved')
     } catch {
-      setJsonError('Invalid JSON - cannot save')
+      toast.error('Unable to save models JSON')
+    } finally {
+      setIsSavingJson(false)
     }
   }
 
@@ -149,34 +83,130 @@ export default function AIInstructionsPage() {
           title="Storage Options"
           icon={<Database className="h-4 w-4" />}
           items={storage}
-          onAdd={(item) => setStorage([...storage, item])}
-          onDelete={(index) =>
-            setStorage(
-              storage.filter((_, currentIndex) => currentIndex !== index),
+          onAdd={async (item) => {
+            const previous = storage
+            const next = [...previous, item]
+            setStorage(next)
+
+            try {
+              const updated = await updateAIInstructions({
+                data: {
+                  storageOptions: next,
+                },
+              })
+              setStorage(updated.storageOptions)
+              toast.success('Storage options saved')
+            } catch (error) {
+              setStorage(previous)
+              throw error
+            }
+          }}
+          onDelete={async (index) => {
+            const previous = storage
+            const next = previous.filter(
+              (_, currentIndex) => currentIndex !== index,
             )
-          }
+            setStorage(next)
+
+            try {
+              const updated = await updateAIInstructions({
+                data: {
+                  storageOptions: next,
+                },
+              })
+              setStorage(updated.storageOptions)
+              toast.success('Storage options saved')
+            } catch (error) {
+              setStorage(previous)
+              throw error
+            }
+          }}
         />
         <EditableList
           title="Watch Screen Sizes"
           icon={<Monitor className="h-4 w-4" />}
           items={screenSizes}
-          onAdd={(item) => setScreenSizes([...screenSizes, item])}
-          onDelete={(index) =>
-            setScreenSizes(
-              screenSizes.filter((_, currentIndex) => currentIndex !== index),
+          onAdd={async (item) => {
+            const previous = screenSizes
+            const next = [...previous, item]
+            setScreenSizes(next)
+
+            try {
+              const updated = await updateAIInstructions({
+                data: {
+                  watchScreenSizes: next,
+                },
+              })
+              setScreenSizes(updated.watchScreenSizes)
+              toast.success('Watch screen sizes saved')
+            } catch (error) {
+              setScreenSizes(previous)
+              throw error
+            }
+          }}
+          onDelete={async (index) => {
+            const previous = screenSizes
+            const next = previous.filter(
+              (_, currentIndex) => currentIndex !== index,
             )
-          }
+            setScreenSizes(next)
+
+            try {
+              const updated = await updateAIInstructions({
+                data: {
+                  watchScreenSizes: next,
+                },
+              })
+              setScreenSizes(updated.watchScreenSizes)
+              toast.success('Watch screen sizes saved')
+            } catch (error) {
+              setScreenSizes(previous)
+              throw error
+            }
+          }}
         />
         <EditableList
           title="Carriers"
           icon={<Radio className="h-4 w-4" />}
           items={carriers}
-          onAdd={(item) => setCarriers([...carriers, item])}
-          onDelete={(index) =>
-            setCarriers(
-              carriers.filter((_, currentIndex) => currentIndex !== index),
+          onAdd={async (item) => {
+            const previous = carriers
+            const next = [...previous, item]
+            setCarriers(next)
+
+            try {
+              const updated = await updateAIInstructions({
+                data: {
+                  carriers: next,
+                },
+              })
+              setCarriers(updated.carriers)
+              toast.success('Carriers saved')
+            } catch (error) {
+              setCarriers(previous)
+              throw error
+            }
+          }}
+          onDelete={async (index) => {
+            const previous = carriers
+            const next = previous.filter(
+              (_, currentIndex) => currentIndex !== index,
             )
-          }
+            setCarriers(next)
+
+            try {
+              const updated = await updateAIInstructions({
+                data: {
+                  carriers: next,
+                },
+              })
+              setCarriers(updated.carriers)
+              toast.success('Carriers saved')
+            } catch (error) {
+              setCarriers(previous)
+              throw error
+            }
+          }}
         />
 
         <div
@@ -201,6 +231,7 @@ export default function AIInstructionsPage() {
               value={modelsJson}
               onChange={(event) => handleJsonChange(event.target.value)}
               className="min-h-[260px] max-h-[400px] border-border/60 bg-muted/30 font-mono text-xs"
+              disabled={isSavingJson}
             />
             {jsonError && (
               <p className="text-sm font-medium text-destructive">
@@ -209,10 +240,11 @@ export default function AIInstructionsPage() {
             )}
             <Button
               size="sm"
-              onClick={handleSaveJson}
+              onClick={() => void handleSaveJson()}
               className="bg-accent text-accent-foreground hover:bg-accent/90"
+              disabled={isSavingJson}
             >
-              Save JSON
+              {isSavingJson ? 'Saving...' : 'Save JSON'}
             </Button>
           </div>
         </div>
