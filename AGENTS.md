@@ -58,3 +58,9 @@ This document defines agent behavior for this repository (TanStack Start).
 - Domain and integration logic belongs in `modules` or `common`, not in `routes`.
 - Route files (`routes`) should import ready implementations from modules instead of implementing logic locally.
 - API routes in `routes/api` should delegate handling to server functions from `modules/*/api`.
+
+## 5) Route and page file conventions
+
+- Route entries must use folder-based structure: each route should live in a folder named after the route and use `index.tsx` and `index.lazy.tsx` files.
+- Files that define pages (for example in `pages`) should contain only the page definition and related exports.
+- Do not define page subcomponents inside page definition files; place subcomponents in separate files under the module's `components` directory and import them into the page file.
