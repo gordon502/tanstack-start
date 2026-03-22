@@ -64,3 +64,11 @@ This document defines agent behavior for this repository (TanStack Start).
 - Route entries must use folder-based structure: each route should live in a folder named after the route and use `index.tsx` and `index.lazy.tsx` files.
 - Files that define pages (for example in `pages`) should contain only the page definition and related exports.
 - Do not define page subcomponents inside page definition files; place subcomponents in separate files under the module's `components` directory and import them into the page file.
+
+## 6) Runtime and Supabase conventions
+
+- Always use Node.js 24 in this repository by running `nvm use 24` before working.
+- The database in this project is Supabase managed through the Supabase CLI.
+- All Supabase and database changes must be made through the Supabase CLI so local-to-staging change management remains consistent and controlled.
+- For backend implementations, prefer built-in Supabase capabilities whenever possible (Auth, Storage, Queues, and other Supabase features).
+- If a requirement cannot be implemented with built-in Supabase capabilities, add custom code to the server-side project codebase.
