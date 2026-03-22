@@ -1,0 +1,108 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - staging
+      - production
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  ci:
+    name: CI checks
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: http://127.0.0.1:54321
+      VITE_SUPABASE_ANON_KEY: ci-anon-key
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check code formatting
+        run: npm run format
+
+      - name: Lint code
+        run: npm run lint
+
+      - name: Check TypeScript types
+        run: npm run check-types
+
+      - name: Build application
+        run: npm run build
+
+  deploy-supabase:
+    name: Deploy Supabase (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push' && (github.ref_name == 'staging' || github.ref_name == 'production')
+    environment: ${{ github.ref_name }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Authenticate Supabase CLI
+        run: supabase login --token "$SUPABASE_ACCESS_TOKEN"
+
+      - name: Link Supabase project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Deploy database migrations
+        run: supabase db push
+
+      - name: Deploy edge functions
+        run: supabase functions deploy process-report-step --project-ref "$SUPABASE_PROJECT_REF"
+
+  deploy-netlify:
+    name: Deploy Netlify (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    needs: deploy-supabase
+    if: github.event_name == 'push' && (github.ref_name == 'staging' || github.ref_name == 'production')
+    environment: ${{ github.ref_name }}
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy to Netlify
+        run: npx netlify deploy --build --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"

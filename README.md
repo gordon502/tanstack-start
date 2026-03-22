@@ -1,201 +1,273 @@
-Welcome to your new TanStack Start app!
+# YYWireless AI Model
 
-# Getting Started
+A web application built with TanStack Start and Supabase for report processing and AI-related configuration data.
 
-To run this application:
+The project includes:
+
+- user authentication (email + password, Supabase Auth),
+- a report generator (CSV/XLSX upload, processing statuses, download, delete),
+- an AI Instructions panel (editable lists and raw JSON model configuration).
+
+## What the app does
+
+After signing in, users work in two main areas:
+
+- `Report Generator` (`/`) - report scheduling and status monitoring,
+- `AI Instructions` (`/ai-instructions`) - configuration data used by AI-related flows.
+
+Report statuses:
+
+- `New`
+- `Processing`
+- `Done`
+- `FAILED`
+
+## Tech stack
+
+- `TanStack Start` + `TanStack Router` (routing and server functions),
+- `React 19` + `Vite`,
+- `Supabase` (Auth, Postgres, Storage, Edge Functions),
+- `Tailwind CSS`,
+- `Netlify` (production deployment target),
+- `GitHub Actions` (CI/CD).
+
+## Project architecture
+
+```text
+src/
+  routes/                    # route definitions (thin layer)
+    __root.tsx
+    _authenticated.tsx
+    _authenticated/
+      index.tsx
+      ai-instructions/index.tsx
+    login/index.tsx
+  modules/
+    auth/                    # auth API, logic, and login UI
+    reports/                 # report generator and report operations
+    ai-instructions/         # AI configuration data
+  common/                    # shared components and utilities
+supabase/
+  migrations/                # schema + RLS + storage policies
+  functions/
+    process-report-step/     # edge function for report processing steps
+.github/workflows/ci-cd.yml  # CI/CD pipeline
+```
+
+Architecture rules:
+
+- `src/routes` delegates logic to `src/modules`,
+- domain and server-side logic lives in `src/modules/*`,
+- `src/common` stores shared components and utilities.
+
+## Server functions (application backend)
+
+The app mainly uses `createServerFn` (instead of classic REST endpoints in `src/routes/api`).
+
+Main functions:
+
+- `auth`
+  - `getAuthenticatedUser` (`GET`) - checks user session,
+- `reports`
+  - `getReports` (`GET`) - list reports for the signed-in user,
+  - `createReport` (`POST`) - stores metadata and triggers edge processing,
+  - `deleteReport` (`POST`) - removes DB record and storage file,
+- `ai-instructions`
+  - `getAIInstructions` (`GET`) - reads singleton configuration,
+  - `updateAIInstructions` (`POST`) - updates selected fields.
+
+## Supabase: database, storage, edge function
+
+### Database
+
+Main tables:
+
+- `public.ai_instructions` - singleton row (`id = 1`) with option lists and models JSON,
+- `public.reports` - user-specific reports,
+- `public.report_jobs` - queue of report processing steps.
+
+Security:
+
+- RLS is enabled on app tables,
+- report data policies are restricted by `auth.uid()`,
+- `ai_instructions` is available to `authenticated` role (select/update).
+
+### Storage
+
+Bucket:
+
+- `reports-input` (private),
+- file size limit: `50MB`,
+- allowed MIME types: `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+- object paths are namespaced by `user_id` (first path segment).
+
+### Edge function
+
+`supabase/functions/process-report-step`:
+
+- processes `report_jobs` queue,
+- updates report status `New -> Processing -> Done`,
+- writes `FAILED` with an error payload on failure.
+
+## Local requirements
+
+- `Node.js 24` (recommended by this project and CI),
+- `npm`,
+- `Supabase CLI` (`npx supabase ...`),
+- `Docker Desktop` (for local Supabase stack).
+
+## Quick local start
+
+1. Switch Node runtime:
+
+```bash
+nvm use 24
+```
+
+2. Install dependencies:
 
 ```bash
 npm install
+```
+
+3. Create local env file:
+
+```bash
+cp .env.example .env
+```
+
+4. Start local Supabase:
+
+```bash
+npx supabase start
+```
+
+5. Check status and copy values into `.env`:
+
+```bash
+npx supabase status
+```
+
+Set in `.env`:
+
+```bash
+VITE_SUPABASE_URL="http://127.0.0.1:54321"
+VITE_SUPABASE_ANON_KEY="<YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY>"
+```
+
+6. On first run (or after migration changes), reset local database:
+
+```bash
+npx supabase db reset
+```
+
+7. Start the app:
+
+```bash
 npm run dev
 ```
 
-# Building For Production
+8. Open:
 
-To build this application for production:
+- app: `http://localhost:3000`
+- Supabase Studio: `http://127.0.0.1:54323`
 
-```bash
-npm run build
-```
+9. Add a test user (if needed):
 
-## Testing
+- Supabase Studio -> Authentication -> Users -> Add user
+- sign in through `/login`.
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+## Environment variables
 
-```bash
-npm run test
-```
+Required for app frontend/server runtime:
 
-## Styling
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+If these variables are missing, the app fails at runtime.
 
-### Removing Tailwind CSS
+## Developer commands
 
-If you prefer not to use Tailwind CSS:
+| Command               | Description                                |
+| --------------------- | ------------------------------------------ |
+| `npm run dev`         | Start dev server (`http://localhost:3000`) |
+| `npm run build`       | Create production build                    |
+| `npm run preview`     | Preview production build locally           |
+| `npm run lint`        | Run ESLint                                 |
+| `npm run format`      | Run Prettier check (no write)              |
+| `npm run check`       | Run Prettier write + ESLint fix            |
+| `npm run check-types` | Run TypeScript `tsc --noEmit`              |
 
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `npm install @tailwindcss/vite tailwindcss -D`
+## CI/CD (GitHub Actions)
 
-## Linting & Formatting
+Workflow: `.github/workflows/ci-cd.yml`.
 
-This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
+### When it runs
 
-```bash
-npm run lint
-npm run format
-npm run check
-```
+- `pull_request`: CI job only,
+- `push` to `staging` or `production`: CI + deploy.
 
-## Routing
+### What CI checks
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+In order:
 
-### Adding A Route
+1. `npm ci`
+2. `npm run format`
+3. `npm run lint`
+4. `npm run check-types`
+5. `npm run build`
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
+Node version in CI: `24`.
 
-TanStack will automatically generate the content of the route file for you.
+### Deploy
 
-Now that you have two routes you can use a `Link` component to navigate between them.
+Deploy runs only for branches:
 
-### Adding Links
+- `staging`,
+- `production`.
 
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
+Deployment order:
 
-```tsx
-import { Link } from '@tanstack/react-router'
-```
+1. Supabase (`supabase db push`, `supabase functions deploy process-report-step`)
+2. Netlify (`npx netlify deploy --build --prod ...`)
 
-Then anywhere in your JSX you can use it like so:
+### GitHub Environments and secrets
 
-```tsx
-<Link to="/about">About</Link>
-```
+Two GitHub Environments are required:
 
-This will create a link that will navigate to the `/about` route.
+- `staging`
+- `production`
 
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
+Each environment should contain:
 
-### Using A Layout
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_PROJECT_REF`
+- `SUPABASE_DB_PASSWORD`
+- `NETLIFY_AUTH_TOKEN`
+- `NETLIFY_SITE_ID`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
+Branch -> environment mapping:
 
-Here is an example layout that includes a header:
+- `staging` -> `staging`
+- `production` -> `production`
 
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+## Troubleshooting
 
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
+- **`Missing required environment variable`**  
+  Check `.env` values for `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
+- **Cannot connect to local Supabase**  
+  Make sure Docker is running, then run `npx supabase start` and verify with `npx supabase status`.
 
-## Server Functions
+- **Cannot sign in**  
+  Verify that the user exists in Supabase Auth and the password is correct.
 
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
+- **Report stays in `New`/`Processing`**  
+  Check logs for `process-report-step` and inspect `report_jobs` table.
 
-```tsx
-import { createServerFn } from '@tanstack/react-start'
+## Notes
 
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+- The project is configured for Netlify deployment (`@netlify/vite-plugin-tanstack-start`).
+- Backend behavior is implemented via Supabase and server functions, not a separate Express-style REST server.
