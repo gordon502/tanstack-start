@@ -9,12 +9,15 @@ type ReportJob = {
   attempt_count: number
 }
 
+type ReportProcessorPayload = {
+  reportId?: string
+}
+
 const MAX_JOBS_PER_INVOCATION = 4
 const MAX_WAIT_MS = 20_000
 const MAX_INVOCATION_MS = 75_000
 
-function getBearerToken(request: Request) {
-  const authorization = request.headers.get('authorization')
+function getBearerToken(authorization: string | null) {
   const tokenMatch = authorization?.match(/^Bearer\s+(.+)$/i)
 
   if (!tokenMatch) {
@@ -22,10 +25,6 @@ function getBearerToken(request: Request) {
   }
 
   return tokenMatch[1].trim()
-}
-
-function isInvokeSecretToken(token: string, invokeSecretKey: string) {
-  return token === invokeSecretKey
 }
 
 function sleep(milliseconds: number) {
@@ -129,87 +128,84 @@ Deno.serve(async (request) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const reportProcessorInvokeSecret = Deno.env.get(
-    'REPORT_PROCESSOR_INVOKE_SECRET',
-  )
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-  if (!supabaseUrl || !reportProcessorInvokeSecret) {
+  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
     return Response.json(
       {
         error:
-          'Missing Supabase environment variables (SUPABASE_URL, REPORT_PROCESSOR_INVOKE_SECRET)',
+          'Missing Supabase environment variables (SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)',
       },
       { status: 500 },
     )
   }
 
-  const bearerToken = getBearerToken(request)
-  if (!bearerToken) {
+  const authorization = request.headers.get('authorization')
+  const bearerToken = getBearerToken(authorization)
+
+  if (!authorization || !bearerToken) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabaseAdmin = createClient(supabaseUrl, reportProcessorInvokeSecret, {
+  const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    global: {
+      headers: {
+        Authorization: authorization,
+      },
+    },
+  })
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabaseUser.auth.getUser(bearerToken)
+
+  if (authError || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  let reportId: string | null = null
+  try {
+    const body = (await request.json()) as ReportProcessorPayload
+    reportId = body.reportId ?? null
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  if (!reportId) {
+    return Response.json({ error: 'reportId is required' }, { status: 400 })
+  }
+
+  const { data: ownedReport, error: ownershipError } = await supabaseUser
+    .from('reports')
+    .select('id')
+    .eq('id', reportId)
+    .maybeSingle()
+
+  if (ownershipError) {
+    return Response.json(
+      {
+        error: `Unable to verify report ownership: ${ownershipError.message}`,
+      },
+      { status: 500 },
+    )
+  }
+
+  if (!ownedReport) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
   })
-
-  const isInvokeSecretCaller = isInvokeSecretToken(
-    bearerToken,
-    reportProcessorInvokeSecret,
-  )
-
-  let callerUserId: string | null = null
-  if (!isInvokeSecretCaller) {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(bearerToken)
-
-    if (authError || !user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    callerUserId = user.id
-  }
-
-  let reportId: string | null = null
-  try {
-    const body = (await request.json()) as { reportId?: string }
-    reportId = body.reportId ?? null
-  } catch {
-    // Ignore empty body and process any due jobs.
-  }
-
-  if (!isInvokeSecretCaller) {
-    if (!reportId) {
-      return Response.json(
-        { error: 'reportId is required for authenticated invocations' },
-        { status: 400 },
-      )
-    }
-
-    const { data: ownedReport, error: ownershipError } = await supabaseAdmin
-      .from('reports')
-      .select('id')
-      .eq('id', reportId)
-      .eq('user_id', callerUserId)
-      .maybeSingle()
-
-    if (ownershipError) {
-      return Response.json(
-        {
-          error: `Unable to verify report ownership: ${ownershipError.message}`,
-        },
-        { status: 500 },
-      )
-    }
-
-    if (!ownedReport) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 })
-    }
-  }
 
   const startedAt = Date.now()
   let processedJobs = 0
@@ -218,18 +214,13 @@ Deno.serve(async (request) => {
     processedJobs < MAX_JOBS_PER_INVOCATION &&
     Date.now() - startedAt < MAX_INVOCATION_MS
   ) {
-    let query = supabaseAdmin
+    const { data: jobs, error: loadError } = await supabaseAdmin
       .from('report_jobs')
       .select('id,report_id,job_type,run_at,attempt_count')
+      .eq('report_id', reportId)
       .eq('status', 'pending')
       .order('run_at', { ascending: true })
       .limit(1)
-
-    if (reportId) {
-      query = query.eq('report_id', reportId)
-    }
-
-    const { data: jobs, error: loadError } = await query
 
     if (loadError) {
       return Response.json(

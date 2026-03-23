@@ -59,7 +59,6 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -78,11 +77,8 @@ jobs:
       - name: Deploy database migrations
         run: supabase db push
 
-      - name: Sync edge runtime secrets
-        run: supabase secrets set REPORT_PROCESSOR_INVOKE_SECRET="$SUPABASE_SECRET_KEY" --project-ref "$SUPABASE_PROJECT_REF"
-
       - name: Deploy edge functions
-        run: supabase functions deploy process-report-step --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+        run: supabase functions deploy process-report-step --project-ref "$SUPABASE_PROJECT_REF"
 
   deploy-netlify:
     name: Deploy Netlify (${{ github.ref_name }})
@@ -95,7 +91,6 @@ jobs:
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -108,18 +103,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Sync server env vars to Netlify
-        run: |
-          npx netlify env:set SUPABASE_SECRET_KEY "$SUPABASE_SECRET_KEY" \
-            --auth "$NETLIFY_AUTH_TOKEN" \
-            --context production \
-            --secret \
-            --force
-          npx netlify env:set SUPABASE_SECRET_KEY "$SUPABASE_SECRET_KEY" \
-            --auth "$NETLIFY_AUTH_TOKEN" \
-            --scope functions runtime \
-            --force
 
       - name: Deploy to Netlify
         run: npx netlify deploy --build --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
